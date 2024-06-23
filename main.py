@@ -91,6 +91,24 @@ async def paste_emoji(interaction, emoji: str):
     except ValueError as e:
         await interaction.response.send_message(content=f"Error: {e}", ephemeral=True)
 
+@client.slash_command(name="create_private_channel", description="Creates a private channel and moves a member to it.")
+async def create_private_channel(interaction: nextcord.Interaction, member: nextcord.Member):
+
+
+    try:
+        overwrites = {
+            interaction.guild.default_role: nextcord.PermissionOverwrite(read_messages=False),
+            member: nextcord.PermissionOverwrite(read_messages=True),
+        }
+        channel = await interaction.guild.create_text_channel(name=f"private-{member.name}", overwrites=overwrites)
+
+        await member.move_to(channel)
+
+        await interaction.response.send_message(f"Successfully created a private channel for {member.mention} and moved them to it.")
+    except nextcord.HTTPException as e:
+        await interaction.response.send_message(f"An error occurred: {e}")
+
+
 @client.slash_command(name="add_emojis", description="Adds multiple emojis (separated by spaces)")
 async def add_emojis(interaction, emojis: str):
 
