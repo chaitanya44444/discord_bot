@@ -69,6 +69,72 @@ async def on_message_delete(message):
             writer = csv.writer(file)
             writer.writerow(["Author", "Message"])
 
+
+
+@client.slash_command(name="paste_emoji", description="Pastes a single emoji")
+async def paste_emoji(interaction, emoji: str):
+
+
+
+    try:
+        if emoji.startswith("<") and emoji.endswith(">"):
+            animated = emoji.startswith("<a:")
+            custom_emoji = await nextcord.PartialEmoji.from_known(emoji[1:-1]) if animated else await nextcord.Emoji.from_known(emoji[1:-1])
+            if custom_emoji is None:
+                raise ValueError("Invalid custom emoji format")
+        else:
+            if not nextcord.utils.is_emoji(emoji):
+                raise ValueError("Invalid Unicode emoji")
+
+        await interaction.response.send_message(content=emoji, ephemeral=True)
+
+    except ValueError as e:
+        await interaction.response.send_message(content=f"Error: {e}", ephemeral=True)
+
+@client.slash_command(name="add_emojis", description="Adds multiple emojis (separated by spaces)")
+async def add_emojis(interaction, emojis: str):
+
+
+    try:
+        emoji_list = []
+        for emoji in emojis.split():
+            if emoji.startswith("<") and emoji.endswith(">"):
+                animated = emoji.startswith("<a:")
+                custom_emoji = await nextcord.PartialEmoji.from_known(emoji[1:-1]) if animated else await nextcord.Emoji.from_known(emoji[1:-1])
+                if custom_emoji is None:
+                    raise ValueError("Invalid custom emoji format")
+                emoji_list.append(str(custom_emoji))
+            else:
+                if not nextcord.utils.is_emoji(emoji):
+                    raise ValueError("Invalid Unicode emoji")
+                emoji_list.append(emoji)
+
+        await interaction.response.send_message(content=" ".join(emoji_list), ephemeral=True)
+
+    except ValueError as e:
+        await interaction.response.send_message(content=f"Error: {e}", ephemeral=True)
+
+@client.slash_command(name="remove_emoji", description="Removes the most recent emoji (if valid)")
+async def remove_emoji(interaction):
+
+
+    try:
+        history = await interaction.channel.history(limit=2).flatten()
+        if len(history) < 2:
+            raise ValueError("No previous emoji messages found")
+
+        previous_message = history[1]
+        if not previous_message.content or not nextcord.utils.is_emoji(previous_message.content):
+            raise ValueError("Previous message doesn't contain a valid emoji")
+
+        await previous_message.delete()
+        await interaction.response.send_message(content="Emoji removed successfully", ephemeral=True)
+
+    except ValueError as e:
+        await interaction.response.send_message(content=f"Error: {e}", ephemeral=True)
+
+
+
 @client.slash_command(name="snipe", description="Snipes a deleted message (or multiple).",guild_ids=[YOUR_SERVER_ID])
 async def snipe(interaction: nextcord.Interaction, num=1):
     guild_id = str(interaction.guild.id)
