@@ -1,36 +1,28 @@
 import nextcord
-from nextcord import Interaction
+from nextcord import Interaction, SelectOption
 from nextcord.ext import commands
+from nextcord.ui import Select, View
 import requests, csv
 import dotenv
 import os
 
 dotenv.load_dotenv()
 
-print(os.getenv('access_token'))
-
-dotenv.load_dotenv()
-
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-
-YOUR_SERVER_ID=1128015206564503613
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+YOUR_SERVER_ID = 1128015206564503613
 
 intents = nextcord.Intents.default()
 intents.members = True
-
+intents.message_content = True  
 
 client = commands.Bot(command_prefix="!", intents=intents)
 
 @client.event
 async def on_ready():
     print("The bot is now ready for use!")
-    print("...")  
-
 
 @client.slash_command(name="quote", description="Get a random inspirational quote.")
 async def quote(interaction: nextcord.Interaction):
-    """Gets a random inspirational quote from an API."""
     url = "https://api.forismatic.com/api/1.0/?method=getQuote&lang=en&format=json"
     response = requests.get(url)
     if response.status_code == 200:
@@ -51,110 +43,54 @@ async def test(interaction: Interaction):
 
 @client.event
 async def on_message_delete(message):
-    if not message.guild:
+    if not message.guild or not message.content:
         return
     guild_id = str(message.guild.id)
     channel_id = str(message.channel.id)
-    max_messages = 10 
     file_path = f"snipe_{guild_id}_{channel_id}.csv"
 
     try:
         with open(file_path, "a", newline="") as file:
             writer = csv.writer(file)
-            if len(file.readlines()) >= max_messages:
-                writer.writerow([])  
             writer.writerow([message.author.name, message.content])
     except FileNotFoundError:
         with open(file_path, "w", newline="") as file:
             writer = csv.writer(file)
             writer.writerow(["Author", "Message"])
+            writer.writerow([message.author.name, message.content])
 
+class SnipeSelect(Select):
+    def __init__(self, options):
+        super().__init__(
+            placeholder="Choose number of messages to snipe",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
 
+    async def callback(self, interaction: nextcord.Interaction):
+        num = int(self.values[0])
+        guild_id = str(interaction.guild.id)
+        channel_id = str(interaction.channel.id)
+        file_path = f"snipe_{guild_id}_{channel_id}.csv"
 
-@client.slash_command(name="paste_emoji", description="Pastes a single emoji")
-async def paste_emoji(interaction, emoji: str):
+        try:
+            with open(file_path, mode='r') as file:
+                reader = csv.reader(file)
+                messages = list(reader)[1:]  # Skip header row
+                if len(messages) == 0:
+                    await interaction.response.send_message("There are no messages to snipe.")
+                    return
+                elif num > len(messages):
+                    num = len(messages)
+                snipe_messages = messages[-num:] 
+                snipe_str = "\n".join(f'{message[0]}: {message[1]}' for message in snipe_messages)
+                await interaction.response.send_message(f'Deleted message(s) {num}:\n{snipe_str}')
+        except FileNotFoundError:
+            await interaction.response.send_message("There are no messages to snipe.")
 
-
-
-    try:
-        if emoji.startswith("<") and emoji.endswith(">"):
-            animated = emoji.startswith("<a:")
-            custom_emoji = await nextcord.PartialEmoji.from_known(emoji[1:-1]) if animated else await nextcord.Emoji.from_known(emoji[1:-1])
-            if custom_emoji is None:
-                raise ValueError("Invalid custom emoji format")
-        else:
-            if not nextcord.utils.is_emoji(emoji):
-                raise ValueError("Invalid Unicode emoji")
-
-        await interaction.response.send_message(content=emoji, ephemeral=True)
-
-    except ValueError as e:
-        await interaction.response.send_message(content=f"Error: {e}", ephemeral=True)
-
-@client.slash_command(name="create_private_channel", description="Creates a private channel and moves a member to it.")
-async def create_private_channel(interaction: nextcord.Interaction, member: nextcord.Member):
-
-
-    try:
-        overwrites = {
-            interaction.guild.default_role: nextcord.PermissionOverwrite(read_messages=False),
-            member: nextcord.PermissionOverwrite(read_messages=True),
-        }
-        channel = await interaction.guild.create_text_channel(name=f"private-{member.name}", overwrites=overwrites)
-
-        await member.move_to(channel)
-
-        await interaction.response.send_message(f"Successfully created a private channel for {member.mention} and moved them to it.")
-    except nextcord.HTTPException as e:
-        await interaction.response.send_message(f"An error occurred: {e}")
-
-
-@client.slash_command(name="add_emojis", description="Adds multiple emojis (separated by spaces)")
-async def add_emojis(interaction, emojis: str):
-
-
-    try:
-        emoji_list = []
-        for emoji in emojis.split():
-            if emoji.startswith("<") and emoji.endswith(">"):
-                animated = emoji.startswith("<a:")
-                custom_emoji = await nextcord.PartialEmoji.from_known(emoji[1:-1]) if animated else await nextcord.Emoji.from_known(emoji[1:-1])
-                if custom_emoji is None:
-                    raise ValueError("Invalid custom emoji format")
-                emoji_list.append(str(custom_emoji))
-            else:
-                if not nextcord.utils.is_emoji(emoji):
-                    raise ValueError("Invalid Unicode emoji")
-                emoji_list.append(emoji)
-
-        await interaction.response.send_message(content=" ".join(emoji_list), ephemeral=True)
-
-    except ValueError as e:
-        await interaction.response.send_message(content=f"Error: {e}", ephemeral=True)
-
-@client.slash_command(name="remove_emoji", description="Removes the most recent emoji (if valid)")
-async def remove_emoji(interaction):
-
-
-    try:
-        history = await interaction.channel.history(limit=2).flatten()
-        if len(history) < 2:
-            raise ValueError("No previous emoji messages found")
-
-        previous_message = history[1]
-        if not previous_message.content or not nextcord.utils.is_emoji(previous_message.content):
-            raise ValueError("Previous message doesn't contain a valid emoji")
-
-        await previous_message.delete()
-        await interaction.response.send_message(content="Emoji removed successfully", ephemeral=True)
-
-    except ValueError as e:
-        await interaction.response.send_message(content=f"Error: {e}", ephemeral=True)
-
-
-
-@client.slash_command(name="snipe", description="Snipes a deleted message (or multiple).",guild_ids=[YOUR_SERVER_ID])
-async def snipe(interaction: nextcord.Interaction, num=1):
+@client.slash_command(name="snipe", description="Snipes a deleted message (or multiple).", guild_ids=[YOUR_SERVER_ID])
+async def snipe(interaction: nextcord.Interaction):
     guild_id = str(interaction.guild.id)
     channel_id = str(interaction.channel.id)
     file_path = f"snipe_{guild_id}_{channel_id}.csv"
@@ -162,21 +98,21 @@ async def snipe(interaction: nextcord.Interaction, num=1):
     try:
         with open(file_path, mode='r') as file:
             reader = csv.reader(file)
-            messages = list(reader)
+            messages = list(reader)[1:]  
             if len(messages) == 0:
                 await interaction.response.send_message("There are no messages to snipe.")
                 return
-            elif num > len(messages):
-                num = len(messages)
-            snipe_messages = messages[-num:] 
-            snipe_str = "\n".join(f'{message[0]}: {message[1]}' for message in snipe_messages)
-            await interaction.response.send_message(f'Deleted message(s) {num}:\n{snipe_str}')
+
+            num_messages = min(15, len(messages))  
+            options = [SelectOption(label=f"{i}", value=f"{i}") for i in range(1, num_messages + 1)]
+            view = View()
+            view.add_item(SnipeSelect(options))
+            await interaction.response.send_message("Select the number of messages to snipe:", view=view, ephemeral=True)
     except FileNotFoundError:
         await interaction.response.send_message("There are no messages to snipe.")
 
 @client.slash_command(name="rickroll", description="Rickroll a user via DM.")
 async def rickroll(interaction: nextcord.Interaction, user: nextcord.User):
-    """Sends a rickroll message to the specified user via DM."""
     rickroll_url = "https://tenor.com/view/when-you-get-rickrolled-by-funguyalt-22954713"
     rickrolled_by = interaction.user.mention
     rickrolled_user = user.mention
@@ -189,7 +125,6 @@ async def rickroll(interaction: nextcord.Interaction, user: nextcord.User):
 
 @client.slash_command(name="savechat", description="Saves DM chat history with all guild members.")
 async def savechat(interaction: nextcord.Interaction):
-    """Saves chat history with all guild members to separate text files, handling potential errors."""
     for guild in client.guilds:
         for member in guild.members:
             if member.bot:
@@ -214,7 +149,6 @@ async def savechat(interaction: nextcord.Interaction):
 
 @client.slash_command(name="dm", description="Sends a DM to a user multiple times.")
 async def dm(interaction: nextcord.Interaction, user: nextcord.User, message: str, times: int):
-    """Sends a custom DM to the specified user a specified number of times, handling potential errors."""
     dm_file = f"{user.id}_dms.txt"
     previous_messages = []
 
@@ -235,6 +169,5 @@ async def dm(interaction: nextcord.Interaction, user: nextcord.User, message: st
         file.writelines(previous_messages)
 
     await interaction.response.send_message(f"Successfully sent DM to {user.mention} {times} times.")
-
 
 client.run(BOT_TOKEN)
